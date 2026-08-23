@@ -1,0 +1,136 @@
+// Automated Industrial Defect Detection — Prisma Schema
+// Industry 4.0 Smart Factory Quality Inspection System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Users & Access Control -------------------------------------------------
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  name       String
+  role       String   @default("INSPECTOR") // ADMIN | ENGINEER | INSPECTOR | VIEWER
+  department String   @default("Quality Assurance")
+  status     String   @default("ACTIVE") // ACTIVE | SUSPENDED | DISABLED
+  avatar     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  inspections Inspection[]
+  auditLogs   AuditLog[]
+}
+
+// ---- Production Lines -------------------------------------------------------
+
+model ProductionLine {
+  id          String   @id @default(cuid())
+  code        String   @unique // e.g. PL-A01
+  name        String
+  facility    String   @default("Plant 1 — Detroit")
+  productType String   // e.g. "Aluminum Casting", "PCB Assembly"
+  shift       String   @default("Day")
+  status      String   @default("RUNNING") // RUNNING | IDLE | MAINTENANCE | STOPPED
+  throughput  Int      @default(0) // parts per hour
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inspections Inspection[]
+}
+
+// ---- Inspections (core record) ---------------------------------------------
+
+model Inspection {
+  id              String   @id @default(cuid())
+  inspectionCode  String   @unique // e.g. QC-2024-00123
+  partId          String   // serial / lot id
+  partName        String
+  partNumber      String   // SKU / part number
+  productionLineId String?
+  inspectorId     String?
+  modelUsed       String   @default("YOLOv11-Defect") // model identifier
+  imageUrl        String?  // stored data URL or path
+  thumbnail       String?  // small preview
+  status          String   @default("PENDING") // PASS | FAIL | REVIEW | PENDING
+  severity        String   @default("NONE") // NONE | MINOR | MAJOR | CRITICAL
+  confidence      Float    @default(0) // 0..1 overall
+  defectCount     Int      @default(0)
+  processingMs    Int      @default(0) // inference latency
+  inferenceDevice String   @default("GPU-A100") // edge/cloud device
+  notes           String?
+  rawAnalysis     String?  // raw JSON from VLM
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  productionLine ProductionLine? @relation(fields: [productionLineId], references: [id])
+  inspector      User?           @relation(fields: [inspectorId], references: [id])
+  defects        Defect[]
+}
+
+// ---- Defects (individual findings) -----------------------------------------
+
+model Defect {
+  id           String   @id @default(cuid())
+  inspectionId String
+  type         String   // CRACK | SCRATCH | DENT | CORROSION | DISCOLORATION | BURR | POROSITY | MISALIGNMENT | CONTAMINATION | WARPING | SHORT_CIRCUIT | MISSING_COMPONENT
+  severity     String   // MINOR | MAJOR | CRITICAL
+  confidence   Float    // 0..1
+  bboxX        Float    @default(0) // normalized 0..1
+  bboxY        Float    @default(0)
+  bboxW        Float    @default(0)
+  bboxH        Float    @default(0)
+  location     String?  // human-readable region
+  description  String?
+  createdAt    DateTime @default(now())
+
+  inspection Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@index([inspectionId])
+  @@index([type])
+}
+
+// ---- Audit Logs (compliance trail) -----------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  userName   String   @default("system")
+  action     String   // LOGIN | LOGOUT | INSPECTION_RUN | REPORT_GENERATED | EXPORT | CONFIG_CHANGE | USER_CREATE | ALERT_ACK | DATA_DELETE
+  resource   String   // Inspection | Report | User | Model | System
+  resourceId String?
+  details    String?
+  ipAddress  String   @default("—")
+  severity   String   @default("INFO") // INFO | WARN | CRITICAL
+  timestamp  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([timestamp])
+}
+
+// ---- Model Performance Metrics (MLOps comparison) --------------------------
+
+model ModelMetric {
+  id             String   @id @default(cuid())
+  modelName      String   // YOLOv8 | YOLOv11 | RT-DETR | EfficientNet-B7 | VisionTransformer
+  version        String
+  map50          Float    // mAP@0.5
+  map5095        Float    // mAP@0.5:0.95
+  precision      Float
+  recall         Float
+  f1             Float
+  inferenceMs    Float    // avg latency per image
+  paramsMillion  Float    // model size in M params
+  dataset        String   @default("IndustrialDefect-12k")
+  status         String   @default("PRODUCTION") // PRODUCTION | STAGING | EXPERIMENTAL | DEPRECATED
+  evaluatedAt    DateTime @default(now())
+
+  @@index([modelName])
+}
