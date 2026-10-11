@@ -53,7 +53,7 @@ export function HistoryView() {
   useEffect(() => {
     const t = setTimeout(() => { if (page !== 1) setPage(1); else load() }, 350)
     return () => clearTimeout(t)
-     
+
   }, [search])
 
   const remove = async (id: string) => {
